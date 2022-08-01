@@ -17,7 +17,72 @@
 #include "../include/logger.hpp"
 #include "spdlog/spdlog.h"
 
-namespace cgns {
+namespace cgns
+{
+
+/// string conversion of given BCType_t
+std::string_view
+to_string(const BCType_t bc)
+{
+  switch (bc)
+  {
+    case BCTypeNull:
+      return "BCTypeNull";
+    case BCTypeUserDefined:
+      return "BCTypeUserDefined";
+    case BCAxisymmetricWedge:
+      return "BCAxisymmetricWedge";
+    case BCDegenerateLine:
+      return "BCDegenerateLine";
+    case BCDegeneratePoint:
+      return "BCDegeneratePoint";
+    case BCDirichlet:
+      return "BCDirichlet";
+    case BCExtrapolate:
+      return "BCExtrapolate";
+    case BCFarfield:
+      return "BCFarfield";
+    case BCGeneral:
+      return "BCGeneral";
+    case BCInflow:
+      return "BCInflow";
+    case BCInflowSubsonic:
+      return "BCInflowSubsonic";
+    case BCInflowSupersonic:
+      return "BCInflowSupersonic";
+    case BCNeumann:
+      return "BCNeumann";
+    case BCOutflow:
+      return "BCOutflow";
+    case BCOutflowSubsonic:
+      return "BCOutflowSubsonic";
+    case BCOutflowSupersonic:
+      return "BCOutflowSupersonic";
+    case BCSymmetryPlane:
+      return "BCSymmetryPlane";
+    case BCSymmetryPolar:
+      return "BCSymmetryPolar";
+    case BCTunnelInflow:
+      return "BCTunnelInflow";
+    case BCTunnelOutflow:
+      return "BCTunnelOutflow";
+    case BCWall:
+      return "BCWall";
+    case BCWallInviscid:
+      return "BCWallInviscid";
+    case BCWallViscous:
+      return "BCWallViscous";
+    case BCWallViscousHeatFlux:
+      return "BCWallViscousHeatFlux";
+    case BCWallViscousIsothermal:
+      return "BCWallViscousIsothermal";
+    case FamilySpecified:
+      return "FamilySpecified";
+    default:
+      spdlog::error("Unknown  BCType_t ({}) encountered.", bc);
+      exit(EXIT_FAILURE);
+  }
+}
 
 file::file(const std::string& path, const fileMode mode)
 {
@@ -29,7 +94,8 @@ file::file(const std::string& path, const fileMode mode)
 
   spdlog::debug("filename : {}", path);
 
-  switch (mode) {
+  switch (mode)
+  {
     case fileMode::read:
       spdlog::debug("mode : {}", "CG_MODE_READ");
       break;
@@ -65,7 +131,8 @@ fileOut::writeBaseInformation(const root root) const
 
   spdlog::debug(indent(2, "nbases : {}", nbases));
 
-  for (const auto base : root.bases) {
+  for (const auto base : root.bases)
+  {
     int B = 0;
     cgnsFn<cg_base_write>(_handle,
                           base.name.c_str(),
@@ -78,8 +145,14 @@ fileOut::writeBaseInformation(const root root) const
     spdlog::debug(indent(4, "phys_dim : {}", base.physicalDimension));
     spdlog::debug(indent(4, "nZone : {}", base.zones.size()));
 
-    for (const auto& zone : base.zones) {
+    for (const auto& zone : base.zones)
+    {
       this->writeZoneInformation(B, zone);
+    }
+
+    for (const auto& family : base.families)
+    {
+      this->writeFamilyDefinition(B, family);
     }
   }
 }
@@ -89,20 +162,24 @@ fileOut::writeZoneInformation(const int B, const zoneV& zone) const
 {
   std::visit(
     overloaded{
-      [this, handle = _handle, B](const zoneStructured& zone) {
+      [this, handle = _handle, B](const zoneStructured& zone)
+      {
         std::vector<cgsize_t> size = {};
         size.reserve(9);
 
         assert(zone.nVertex.size() == zone.nCell.size() &&
                zone.nVertex.size() == zone.nBoundVertex.size());
 
-        for (const auto i : zone.nVertex) {
+        for (const auto i : zone.nVertex)
+        {
           size.emplace_back(i);
         }
-        for (const auto i : zone.nCell) {
+        for (const auto i : zone.nCell)
+        {
           size.emplace_back(i);
         }
-        for (const auto i : zone.nBoundVertex) {
+        for (const auto i : zone.nBoundVertex)
+        {
           size.emplace_back(i);
         }
 
@@ -116,11 +193,13 @@ fileOut::writeZoneInformation(const int B, const zoneV& zone) const
         spdlog::debug(indent(6, "zonename : {}", zone.name));
         spdlog::debug(indent(6, "size : [{}]", fmt::join(size, " , ")));
 
-        for (const auto& grid : zone.gridCoordinates) {
+        for (const auto& grid : zone.gridCoordinates)
+        {
           this->writeZoneGridCoordinates(B, Z, grid);
         }
       },
-      [this, handle = _handle, B](const zoneUnstructured& zone) {
+      [this, handle = _handle, B](const zoneUnstructured& zone)
+      {
         int Z = 0;
 
         std::vector<cgsize_t> size = { zone.nVertex,
@@ -136,7 +215,8 @@ fileOut::writeZoneInformation(const int B, const zoneV& zone) const
         spdlog::debug(indent(6, "zonename : {}", zone.name));
         spdlog::debug(indent(6, "size : {}", fmt::join(size, " , ")));
 
-        for (const auto& grid : zone.gridCoordinates) {
+        for (const auto& grid : zone.gridCoordinates)
+        {
           this->writeZoneGridCoordinates(B, Z, grid);
         }
       } },
@@ -157,7 +237,8 @@ fileOut::writeZoneGridCoordinates(const int B,
   spdlog::debug(indent(8, "GridCoordName : {}", grid.name));
   spdlog::debug(indent(8, "ncoords : {}", grid.dataArrays.size()));
 
-  for (const auto& data : grid.dataArrays) {
+  for (const auto& data : grid.dataArrays)
+  {
     this->writeZoneGridCoordinateData(B, Z, data);
   }
 }
@@ -169,7 +250,8 @@ fileOut::writeZoneGridCoordinateData(const int B,
 {
   int C = 0;
   std::visit(
-    [handle = _handle, B, Z, &C](const auto& da) {
+    [handle = _handle, B, Z, &C](const auto& da)
+    {
       cgnsFn<cg_coord_write>(
         handle, B, Z, da.dataType(), da.name.c_str(), da.data.data(), &C);
 
@@ -180,6 +262,33 @@ fileOut::writeZoneGridCoordinateData(const int B,
       spdlog::debug(indent(10, "size : {}", da.data.size()));
     },
     data);
+}
+
+void
+fileOut::writeFamilyDefinition(const int B, const family& family) const
+{
+  int Fam = 0;
+  cgnsFn<cg_family_write>(_handle, B, family.name.c_str(), &Fam);
+
+  spdlog::debug(indent(4, "Fam : {}", Fam));
+  spdlog::debug(indent(4, "FamilyName : {}", family.name));
+
+  if (family.bc.has_value())
+  {
+    const auto& famBc = *family.bc;
+    spdlog::debug(indent(4, "nFamBC : 1"));
+
+    int BC = 0;
+    cgnsFn<cg_fambc_write>(
+      _handle, B, Fam, famBc.name.c_str(), famBc.bcType, &BC);
+
+    spdlog::debug(indent(4, "FamBCName : {}", famBc.name));
+    spdlog::debug(indent(4, "BCType : {}", to_string(famBc.bcType)));
+  }
+  else
+  {
+    spdlog::debug(indent(4, "nFamBC : 0"));
+  }
 }
 
 std::vector<base>
@@ -194,7 +303,8 @@ fileIn::readBaseInformation() const
 
   bases.reserve(nbases);
 
-  for (int B = 1; B <= nbases; ++B) {
+  for (int B = 1; B <= nbases; ++B)
+  {
     spdlog::info(indent(2, "Reading Base {}", B));
 
     spdlog::debug(indent(2, "B : {}", B));
@@ -210,7 +320,10 @@ fileIn::readBaseInformation() const
 
     std::vector<zoneV> zones = this->readZoneInformation(B);
 
-    bases.emplace_back(basename, cell_dim, phys_dim, std::move(zones));
+    auto families = this->readFamilyDefinition(B);
+
+    bases.emplace_back(
+      basename, cell_dim, phys_dim, std::move(zones), std::move(families));
   }
 
   return bases;
@@ -228,7 +341,8 @@ fileIn::readZoneInformation(const int B) const
 
   zones.reserve(nzones);
 
-  for (int Z = 1; Z <= nzones; ++Z) {
+  for (int Z = 1; Z <= nzones; ++Z)
+  {
     spdlog::info(indent(4, "Reading Zone {} of Base {}", Z, B));
 
     spdlog::debug(indent(6, "Z : {}", Z));
@@ -236,7 +350,8 @@ fileIn::readZoneInformation(const int B) const
     ZoneType_t zonetype;
     cgnsFn<cg_zone_type>(_handle, B, Z, &zonetype);
 
-    switch (zonetype) {
+    switch (zonetype)
+    {
       case Structured:
         spdlog::debug(indent(6, "zonetype : Structured"));
         break;
@@ -260,16 +375,19 @@ fileIn::readZoneInformation(const int B) const
 
     spdlog::debug(indent(6, "zonename : {}", zonename));
     spdlog::debug(indent(6, "size : {}", size[0]));
-    for (int i = 1; i < 9; ++i) {
+    for (int i = 1; i < 9; ++i)
+    {
       spdlog::debug(indent(6, "       {}", size[i]));
     }
 
-    if (zonetype == Structured) {
+    if (zonetype == Structured)
+    {
       unsigned VertexSize[3] = {};
       unsigned CellSize[3] = {};
       unsigned VertexSizeBoundary[3] = {};
 
-      if (index_dim == 2) {
+      if (index_dim == 2)
+      {
         VertexSize[0] = static_cast<unsigned int>(size[0]);
         VertexSize[1] = static_cast<unsigned int>(size[1]);
 
@@ -289,7 +407,9 @@ fileIn::readZoneInformation(const int B) const
           indent(6, "VertexSizeBoundary : {}", VertexSizeBoundary[0]));
         spdlog::debug(
           indent(6, "                     {}", VertexSizeBoundary[1]));
-      } else if (index_dim == 3) {
+      }
+      else if (index_dim == 3)
+      {
         VertexSize[0] = static_cast<unsigned int>(size[0]);
         VertexSize[1] = static_cast<unsigned int>(size[1]);
         VertexSize[2] = static_cast<unsigned int>(size[2]);
@@ -316,7 +436,9 @@ fileIn::readZoneInformation(const int B) const
           indent(6, "                     {}", VertexSizeBoundary[1]));
         spdlog::debug(
           indent(6, "                     {}", VertexSizeBoundary[2]));
-      } else {
+      }
+      else
+      {
         spdlog::error("Unexpected index_dim ({}) encountered.", index_dim);
         exit(EXIT_FAILURE);
       }
@@ -330,7 +452,8 @@ fileIn::readZoneInformation(const int B) const
       std::vector<unsigned> nBoundVertex{};
       nBoundVertex.reserve(index_dim);
 
-      for (int i = 0; i < index_dim; ++i) {
+      for (int i = 0; i < index_dim; ++i)
+      {
         nVertex.emplace_back(VertexSize[i]);
         nCell.emplace_back(CellSize[i]);
         nBoundVertex.emplace_back(VertexSizeBoundary[i]);
@@ -343,7 +466,9 @@ fileIn::readZoneInformation(const int B) const
                                          std::move(nCell),
                                          std::move(nBoundVertex),
                                          std::move(gridCoordinates) });
-    } else if (zonetype == Unstructured) {
+    }
+    else if (zonetype == Unstructured)
+    {
       unsigned VertexSize = static_cast<unsigned int>(size[0]);
       unsigned CellSize = static_cast<unsigned int>(size[1]);
       unsigned VertexSizeBoundary = static_cast<unsigned int>(size[2]);
@@ -356,7 +481,9 @@ fileIn::readZoneInformation(const int B) const
                                            CellSize,
                                            VertexSizeBoundary,
                                            std::move(gridCoordinates) });
-    } else {
+    }
+    else
+    {
       spdlog::error("Unknown zonetype ({}) encountered.", zonetype);
       exit(EXIT_FAILURE);
     }
@@ -381,14 +508,16 @@ fileIn::readZoneGridCoordinates(const int B,
 
   spdlog::debug(indent(6, "ngrids : {}", ngrids));
 
-  if (ngrids > 1) {
+  if (ngrids > 1)
+  {
     spdlog::warn("Multiple grids encountered in Zone {} Block {}. Not yet "
                  "supported. Only first grid is parsed.",
                  Z,
                  B);
   }
 
-  for (int G = 1; G <= 1; ++G) {
+  for (int G = 1; G <= 1; ++G)
+  {
     char GridCoordName[33] = "";
     cgnsFn<cg_grid_read>(_handle, B, Z, G, GridCoordName);
 
@@ -403,7 +532,8 @@ fileIn::readZoneGridCoordinates(const int B,
     std::vector<gridCoordinateDataV> data{};
     data.reserve(ncoords);
 
-    for (int C = 1; C <= ncoords; ++C) {
+    for (int C = 1; C <= ncoords; ++C)
+    {
       spdlog::debug(indent(10, "C : {}", C));
 
       DataType_t datatype;
@@ -421,7 +551,8 @@ fileIn::readZoneGridCoordinates(const int B,
       cgsize_t range_max[3] = { 1, 1, 1 };
 
       size_t length = 1;
-      for (size_t i = 0; i < nVertex.size(); ++i) {
+      for (size_t i = 0; i < nVertex.size(); ++i)
+      {
         range_max[i] = nVertex[i];
         length *= nVertex[i];
       }
@@ -430,11 +561,14 @@ fileIn::readZoneGridCoordinates(const int B,
 
       void* coord_ptr = nullptr;
 
-      if (mem_datatype == RealSingle) {
+      if (mem_datatype == RealSingle)
+      {
         auto field = std::vector<float>(length);
         coord_ptr = field.data();
         data.emplace_back(dataArray<float>{ coordname, std::move(field) });
-      } else {
+      }
+      else
+      {
         auto field = std::vector<double>(length);
         coord_ptr = field.data();
         data.emplace_back(dataArray<double>{ coordname, std::move(field) });
@@ -454,6 +588,67 @@ fileIn::readZoneGridCoordinates(const int B,
   }
 
   return gridCoords;
+}
+
+std::vector<family>
+fileIn::readFamilyDefinition(const int B) const
+{
+  std::vector<family> families{};
+
+  int nfamilies = 0;
+  cgnsFn<cg_nfamilies>(_handle, B, &nfamilies);
+
+  families.reserve(nfamilies);
+
+  spdlog::debug(indent(4, "nfamilies : {}", nfamilies));
+
+  for (int Fam = 1; Fam <= nfamilies; ++Fam)
+  {
+    char FamilyName[33] = "";
+    int nFamBC = 0;
+    int nGeo = 0;
+
+    cgnsFn<cg_family_read>(_handle, B, Fam, FamilyName, &nFamBC, &nGeo);
+
+    spdlog::debug(indent(6, "Fam : {}", Fam));
+    spdlog::debug(indent(6, "FamilyName : {}", FamilyName));
+    spdlog::debug(indent(6, "nFamBC : {}", nFamBC));
+    spdlog::debug(indent(6, "nGeo : {}", nGeo));
+
+    std::optional<familyBC> bc{};
+    if (nFamBC == 1)
+    {
+      bc = this->readFamilyBoundaryCondition(B, Fam);
+    }
+    else if (nFamBC != 0)
+    {
+      spdlog::error("nFamBC = {} encountered. Must be 0 or 1.", nFamBC);
+      exit(EXIT_FAILURE);
+    }
+
+    if (nGeo != 0)
+    {
+      spdlog::warn("nGeo != 0 ( {} ). Not yet supported", nGeo);
+    }
+
+    families.emplace_back(FamilyName, std::move(bc));
+  }
+
+  return families;
+}
+
+familyBC
+fileIn::readFamilyBoundaryCondition(const int B, const int Fam) const
+{
+  int BC = 1; // this must be one, see cgns standard
+  char FamBCName[33];
+  BCType_t BCType = BCTypeNull;
+  cgnsFn<cg_fambc_read>(_handle, B, Fam, BC, FamBCName, &BCType);
+
+  spdlog::debug(indent(6, "FamBCName : {}", FamBCName));
+  spdlog::debug(indent(6, "BCType : {}", to_string(BCType)));
+
+  return { FamBCName, BCType };
 }
 
 template<>
@@ -497,17 +692,20 @@ operator<<(std::ostream& out, const zoneStructured& zone)
       << "  ZoneType : Structured\n"
       << "  Name : " << zone.name << "\n"
       << "  VertexSize : [";
-  for (const auto i : zone.nVertex) {
+  for (const auto i : zone.nVertex)
+  {
     out << " " << i;
   }
   out << "]\n"
       << "  CellSize : [";
-  for (const auto i : zone.nCell) {
+  for (const auto i : zone.nCell)
+  {
     out << " " << i;
   }
   out << "]\n"
       << "  VertexSizeBoundary : [";
-  for (const auto i : zone.nBoundVertex) {
+  for (const auto i : zone.nBoundVertex)
+  {
     out << " " << i;
   }
   out << "]\n"

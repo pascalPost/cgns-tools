@@ -9,29 +9,55 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <variant>
 #include <vector>
 
-namespace cgns {
+namespace cgns
+{
+
+/// string conversion of given BCType_t
+std::string_view
+to_string(const BCType_t bc);
 
 /// cgns function call with error handling
 template<auto& F, class... Args>
 void
 cgnsFn(Args&&... args)
 {
-  if (const int ier = F(args...); ier != CG_OK) {
+  if (const int ier = F(args...); ier != CG_OK)
+  {
     cg_error_exit();
   }
 }
+
+/// represents FamilyBC_t
+struct familyBC
+{
+  std::string name;
+  BCType_t bcType;
+};
+
+/// represents Family_t
+struct family
+{
+  family(std::string&& name, std::optional<familyBC>&& bc)
+    : name{ std::move(name) }
+    , bc{ std::move(bc) }
+  {
+  }
+
+  std::string name;
+  std::optional<familyBC> bc;
+};
 
 /// represents DataArray_t
 template<typename T>
 struct dataArray
 {
-
   /// constructor
   dataArray(std::string&& name, std::vector<T>&& data)
     : name{ name }
@@ -46,11 +72,16 @@ struct dataArray
 
   DataType_t dataType() const
   {
-    if constexpr (std::is_same_v<T, float>) {
+    if constexpr (std::is_same_v<T, float>)
+    {
       return RealSingle;
-    } else if constexpr (std::is_same_v<T, double>) {
+    }
+    else if constexpr (std::is_same_v<T, double>)
+    {
       return RealDouble;
-    } else {
+    }
+    else
+    {
       static_assert(always_false<T>::value, "Unknow dataArray data type");
     }
   }
@@ -188,11 +219,13 @@ struct base
   base(std::string&& name,
        const unsigned cellDimension,
        const unsigned physicalDimension,
-       std::vector<zoneV>&& zones = {})
+       std::vector<zoneV>&& zones = {},
+       std::vector<family>&& families = {})
     : name{ std::move(name) }
     , cellDimension{ cellDimension }
     , physicalDimension{ physicalDimension }
     , zones{ std::move(zones) }
+    , families{ std::move(families) }
   {
   }
 
@@ -210,6 +243,8 @@ struct base
   unsigned physicalDimension;
 
   std::vector<zoneV> zones;
+
+  std::vector<family> families;
 };
 
 /// streaming helper function for base
@@ -266,6 +301,12 @@ struct fileIn : file
     const int B,
     const int Z,
     const std::vector<unsigned>& nVertex) const;
+
+  /// read Family Definition
+  std::vector<family> readFamilyDefinition(const int B) const;
+
+  /// read Family Boundary Condition
+  familyBC readFamilyBoundaryCondition(const int B, const int Fam) const;
 };
 
 /// cgns read file
@@ -292,6 +333,9 @@ struct fileOut : file
   void writeZoneGridCoordinateData(const int B,
                                    const int Z,
                                    const gridCoordinateDataV& data) const;
+
+  /// write family definition including the optional BC
+  void writeFamilyDefinition(const int B, const family& family) const;
 };
 
 /// parse file and return a root to the cgns hirarchy
