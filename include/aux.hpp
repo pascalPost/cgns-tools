@@ -7,6 +7,25 @@
 
 namespace cgns {
 
-template <typename T> struct always_false : std::false_type {};
+template<typename T>
+struct always_false : std::false_type
+{
+};
+
+/// @brief helper type for the visitor, see
+/// https://en.cppreference.com/w/cpp/utility/variant/visit
+template<class... Ts>
+struct overloaded : Ts...
+{
+  using Ts::operator()...;
+};
+// explicit deduction guide (not needed as of C++20)
+template<class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
+
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
 
 } // namespace cgns

@@ -2,10 +2,10 @@
 // This code is licensed under MIT license (see LICENSE.txt for details)
 
 #include "../include/cgns.hpp"
-#include "../include/logger.hpp"
-#include "spdlog/spdlog.h"
+
 #include <cgnslib.h>
 #include <cgnstypes.h>
+
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
@@ -14,9 +14,13 @@
 #include <variant>
 #include <vector>
 
+#include "../include/logger.hpp"
+#include "spdlog/spdlog.h"
+
 namespace cgns {
 
-file::file(const std::string &path, const fileMode mode) {
+file::file(const std::string& path, const fileMode mode)
+{
   spdlog::info("Openening CGNS file : {}", path);
 
   cgnsFn<cg_open>(path.c_str(), static_cast<int>(mode), &_handle);
@@ -26,26 +30,161 @@ file::file(const std::string &path, const fileMode mode) {
   spdlog::debug("filename : {}", path);
 
   switch (mode) {
-  case fileMode::read:
-    spdlog::debug("mode : {}", "CG_MODE_READ");
-    break;
-  case fileMode::write:
-    spdlog::debug("mode : {}", "CG_MODE_WRITE");
-    break;
-  case fileMode::modify:
-    spdlog::debug("mode : {}", "CG_MODE_MODIFY");
-  default:
-    spdlog::error("Unknown cgns file mode");
+    case fileMode::read:
+      spdlog::debug("mode : {}", "CG_MODE_READ");
+      break;
+    case fileMode::write:
+      spdlog::debug("mode : {}", "CG_MODE_WRITE");
+      break;
+    case fileMode::modify:
+      spdlog::debug("mode : {}", "CG_MODE_MODIFY");
+    default:
+      spdlog::error("Unknown cgns file mode");
   }
 }
 
-file::~file() { cgnsFn<cg_close>(_handle); }
+file::~file()
+{
+  cgnsFn<cg_close>(_handle);
+}
 
-fileIn::fileIn(const std::string &path) : file{path, fileMode::read} {}
+fileIn::fileIn(const std::string& path)
+  : file{ path, fileMode::read }
+{
+}
 
-fileOut::fileOut(const std::string &path) : file{path, fileMode::write} {}
+fileOut::fileOut(const std::string& path)
+  : file{ path, fileMode::write }
+{
+}
 
-std::vector<base> fileIn::readBaseInformation() const {
+void
+fileOut::writeBaseInformation(const root root) const
+{
+  const auto nbases = root.bases.size();
+
+  spdlog::debug(indent(2, "nbases : {}", nbases));
+
+  for (const auto base : root.bases) {
+    int B = 0;
+    cgnsFn<cg_base_write>(_handle,
+                          base.name.c_str(),
+                          base.cellDimension,
+                          base.physicalDimension,
+                          &B);
+    spdlog::info(indent(2, "Writing Base {}", B));
+    spdlog::debug(indent(4, "basename: {}", base.name));
+    spdlog::debug(indent(4, "cell_dim : {}", base.cellDimension));
+    spdlog::debug(indent(4, "phys_dim : {}", base.physicalDimension));
+    spdlog::debug(indent(4, "nZone : {}", base.zones.size()));
+
+    for (const auto& zone : base.zones) {
+      this->writeZoneInformation(B, zone);
+    }
+  }
+}
+
+void
+fileOut::writeZoneInformation(const int B, const zoneV& zone) const
+{
+  std::visit(
+    overloaded{
+      [this, handle = _handle, B](const zoneStructured& zone) {
+        std::vector<cgsize_t> size = {};
+        size.reserve(9);
+
+        assert(zone.nVertex.size() == zone.nCell.size() &&
+               zone.nVertex.size() == zone.nBoundVertex.size());
+
+        for (const auto i : zone.nVertex) {
+          size.emplace_back(i);
+        }
+        for (const auto i : zone.nCell) {
+          size.emplace_back(i);
+        }
+        for (const auto i : zone.nBoundVertex) {
+          size.emplace_back(i);
+        }
+
+        int Z = 0;
+
+        cgnsFn<cg_zone_write>(
+          handle, B, zone.name.c_str(), size.data(), zone.zonetype(), &Z);
+
+        spdlog::info(indent(4, "Writing Zone {} Block {}", Z, B));
+        spdlog::debug(indent(6, "zonetype : Structured"));
+        spdlog::debug(indent(6, "zonename : {}", zone.name));
+        spdlog::debug(indent(6, "size : [{}]", fmt::join(size, " , ")));
+
+        for (const auto& grid : zone.gridCoordinates) {
+          this->writeZoneGridCoordinates(B, Z, grid);
+        }
+      },
+      [this, handle = _handle, B](const zoneUnstructured& zone) {
+        int Z = 0;
+
+        std::vector<cgsize_t> size = { zone.nVertex,
+                                       zone.nCell,
+                                       zone.nBoundVertex };
+
+        cgnsFn<cg_zone_write>(
+          handle, B, zone.name.c_str(), size.data(), zone.zonetype(), &Z);
+
+        spdlog::info(indent(4, "Writing Zone {}", Z));
+        spdlog::debug(indent(6, "Z : {}", Z));
+        spdlog::debug(indent(6, "zonetype : Unstructured"));
+        spdlog::debug(indent(6, "zonename : {}", zone.name));
+        spdlog::debug(indent(6, "size : {}", fmt::join(size, " , ")));
+
+        for (const auto& grid : zone.gridCoordinates) {
+          this->writeZoneGridCoordinates(B, Z, grid);
+        }
+      } },
+    zone);
+}
+
+void
+fileOut::writeZoneGridCoordinates(const int B,
+                                  const int Z,
+                                  const gridCoordinatesT& grid) const
+{
+  int G = 0;
+  cgnsFn<cg_grid_write>(_handle, B, Z, grid.name.c_str(), &G);
+
+  spdlog::info(
+    indent(6, "Writing Grid Coordinates {} Zone {} Block {}", G, Z, B));
+  spdlog::debug(indent(8, "G : {}", G));
+  spdlog::debug(indent(8, "GridCoordName : {}", grid.name));
+  spdlog::debug(indent(8, "ncoords : {}", grid.dataArrays.size()));
+
+  for (const auto& data : grid.dataArrays) {
+    this->writeZoneGridCoordinateData(B, Z, data);
+  }
+}
+
+void
+fileOut::writeZoneGridCoordinateData(const int B,
+                                     const int Z,
+                                     const gridCoordinateDataV& data) const
+{
+  int C = 0;
+  std::visit(
+    [handle = _handle, B, Z, &C](const auto& da) {
+      cgnsFn<cg_coord_write>(
+        handle, B, Z, da.dataType(), da.name.c_str(), da.data.data(), &C);
+
+      spdlog::info(indent(
+        8, "Writing Data {} Grid Coordinates {} Zone {} Block {}", C, 1, Z, B));
+      spdlog::debug(indent(10, "C : {}", C));
+      spdlog::debug(indent(10, "CoordName : {}", da.name));
+      spdlog::debug(indent(10, "size : {}", da.data.size()));
+    },
+    data);
+}
+
+std::vector<base>
+fileIn::readBaseInformation() const
+{
   std::vector<base> bases{};
 
   int nbases = 0;
@@ -77,23 +216,9 @@ std::vector<base> fileIn::readBaseInformation() const {
   return bases;
 }
 
-void fileOut::writeBaseInformation(const root root) const {
-  const auto nbases = root.bases.size();
-
-  spdlog::debug(indent(2, "nbases : {}", nbases));
-
-  for (const auto base : root.bases) {
-    int B = 0;
-    cgnsFn<cg_base_write>(_handle, base.name.c_str(), base.cellDimension,
-                          base.physicalDimension, &B);
-    spdlog::info(indent(2, "Writing Base {}", B));
-    spdlog::debug(indent(4, "basename: {}", base.name));
-    spdlog::debug(indent(4, "cell_dim : {}", base.cellDimension));
-    spdlog::debug(indent(4, "phys_dim : {}", base.physicalDimension));
-  }
-}
-
-std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
+std::vector<zoneV>
+fileIn::readZoneInformation(const int B) const
+{
   std::vector<zoneV> zones{};
 
   int nzones = 0;
@@ -112,15 +237,15 @@ std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
     cgnsFn<cg_zone_type>(_handle, B, Z, &zonetype);
 
     switch (zonetype) {
-    case Structured:
-      spdlog::debug(indent(6, "zonetype : Structured"));
-      break;
-    case Unstructured:
-      spdlog::debug(indent(6, "zonetype : Unstructured"));
-      break;
-    default:
-      spdlog::error("Unknown zonetype ({}) encountered.", zonetype);
-      exit(EXIT_FAILURE);
+      case Structured:
+        spdlog::debug(indent(6, "zonetype : Structured"));
+        break;
+      case Unstructured:
+        spdlog::debug(indent(6, "zonetype : Unstructured"));
+        break;
+      default:
+        spdlog::error("Unknown zonetype ({}) encountered.", zonetype);
+        exit(EXIT_FAILURE);
     }
 
     int index_dim = 0;
@@ -161,9 +286,9 @@ std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
         spdlog::debug(indent(6, "           {}", CellSize[1]));
 
         spdlog::debug(
-            indent(6, "VertexSizeBoundary : {}", VertexSizeBoundary[0]));
+          indent(6, "VertexSizeBoundary : {}", VertexSizeBoundary[0]));
         spdlog::debug(
-            indent(6, "                     {}", VertexSizeBoundary[1]));
+          indent(6, "                     {}", VertexSizeBoundary[1]));
       } else if (index_dim == 3) {
         VertexSize[0] = static_cast<unsigned int>(size[0]);
         VertexSize[1] = static_cast<unsigned int>(size[1]);
@@ -186,11 +311,11 @@ std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
         spdlog::debug(indent(6, "           {}", CellSize[2]));
 
         spdlog::debug(
-            indent(6, "VertexSizeBoundary : {}", VertexSizeBoundary[0]));
+          indent(6, "VertexSizeBoundary : {}", VertexSizeBoundary[0]));
         spdlog::debug(
-            indent(6, "                     {}", VertexSizeBoundary[1]));
+          indent(6, "                     {}", VertexSizeBoundary[1]));
         spdlog::debug(
-            indent(6, "                     {}", VertexSizeBoundary[2]));
+          indent(6, "                     {}", VertexSizeBoundary[2]));
       } else {
         spdlog::error("Unexpected index_dim ({}) encountered.", index_dim);
         exit(EXIT_FAILURE);
@@ -213,19 +338,24 @@ std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
 
       auto gridCoordinates = this->readZoneGridCoordinates(B, Z, nVertex);
 
-      zones.emplace_back(
-          zoneStructured{zonename, std::move(nVertex), std::move(nCell),
-                         std::move(nBoundVertex), std::move(gridCoordinates)});
+      zones.emplace_back(zoneStructured{ zonename,
+                                         std::move(nVertex),
+                                         std::move(nCell),
+                                         std::move(nBoundVertex),
+                                         std::move(gridCoordinates) });
     } else if (zonetype == Unstructured) {
       unsigned VertexSize = static_cast<unsigned int>(size[0]);
       unsigned CellSize = static_cast<unsigned int>(size[1]);
       unsigned VertexSizeBoundary = static_cast<unsigned int>(size[2]);
 
-      auto gridCoordinates = this->readZoneGridCoordinates(B, Z, {VertexSize});
+      auto gridCoordinates =
+        this->readZoneGridCoordinates(B, Z, { VertexSize });
 
-      zones.emplace_back(zoneUnstructured{zonename, VertexSize, CellSize,
-                                          VertexSizeBoundary,
-                                          std::move(gridCoordinates)});
+      zones.emplace_back(zoneUnstructured{ zonename,
+                                           VertexSize,
+                                           CellSize,
+                                           VertexSizeBoundary,
+                                           std::move(gridCoordinates) });
     } else {
       spdlog::error("Unknown zonetype ({}) encountered.", zonetype);
       exit(EXIT_FAILURE);
@@ -236,13 +366,15 @@ std::vector<zoneV> fileIn::readZoneInformation(const int B) const {
 }
 
 std::vector<gridCoordinatesT>
-fileIn::readZoneGridCoordinates(const int B, const int Z,
-                                const std::vector<unsigned> nVertex) const {
+fileIn::readZoneGridCoordinates(const int B,
+                                const int Z,
+                                const std::vector<unsigned>& nVertex) const
+{
   std::vector<gridCoordinatesT> gridCoords{};
   gridCoords.reserve(1);
 
   spdlog::info(
-      indent(6, "Reading Grid Coordinates of Zone {} of Base {}", Z, B));
+    indent(6, "Reading Grid Coordinates of Zone {} of Base {}", Z, B));
 
   int ngrids = 0;
   cgnsFn<cg_ngrids>(_handle, B, Z, &ngrids);
@@ -252,7 +384,8 @@ fileIn::readZoneGridCoordinates(const int B, const int Z,
   if (ngrids > 1) {
     spdlog::warn("Multiple grids encountered in Zone {} Block {}. Not yet "
                  "supported. Only first grid is parsed.",
-                 Z, B);
+                 Z,
+                 B);
   }
 
   for (int G = 1; G <= 1; ++G) {
@@ -278,13 +411,14 @@ fileIn::readZoneGridCoordinates(const int B, const int Z,
       cgnsFn<cg_coord_info>(_handle, B, Z, C, &datatype, coordname);
 
       spdlog::debug(
-          indent(10, "datatype : {}",
-                 datatype == RealSingle ? "RealSingle" : "RealDouble"));
+        indent(10,
+               "datatype : {}",
+               datatype == RealSingle ? "RealSingle" : "RealDouble"));
       spdlog::debug(indent(10, "coordname : {}", coordname));
 
       // read all vertices
-      cgsize_t range_min[3] = {1, 1, 1};
-      cgsize_t range_max[3] = {1, 1, 1};
+      cgsize_t range_min[3] = { 1, 1, 1 };
+      cgsize_t range_max[3] = { 1, 1, 1 };
 
       size_t length = 1;
       for (size_t i = 0; i < nVertex.size(); ++i) {
@@ -294,20 +428,26 @@ fileIn::readZoneGridCoordinates(const int B, const int Z,
 
       DataType_t mem_datatype = datatype;
 
-      void *coord_ptr = nullptr;
+      void* coord_ptr = nullptr;
 
       if (mem_datatype == RealSingle) {
         auto field = std::vector<float>(length);
         coord_ptr = field.data();
-        data.emplace_back(dataArray<float>{coordname, std::move(field)});
+        data.emplace_back(dataArray<float>{ coordname, std::move(field) });
       } else {
         auto field = std::vector<double>(length);
         coord_ptr = field.data();
-        data.emplace_back(dataArray<double>{coordname, std::move(field)});
+        data.emplace_back(dataArray<double>{ coordname, std::move(field) });
       }
 
-      cgnsFn<cg_coord_read>(_handle, B, Z, coordname, mem_datatype, range_min,
-                            range_max, coord_ptr);
+      cgnsFn<cg_coord_read>(_handle,
+                            B,
+                            Z,
+                            coordname,
+                            mem_datatype,
+                            range_min,
+                            range_max,
+                            coord_ptr);
     }
 
     gridCoords.emplace_back(GridCoordName, std::move(data));
@@ -316,27 +456,107 @@ fileIn::readZoneGridCoordinates(const int B, const int Z,
   return gridCoords;
 }
 
-std::ostream &operator<<(std::ostream &out, const base &base) {
-  out << "basename: " << base.name << "\n"
-      << "cellDimension : " << base.cellDimension << "\n"
-      << "physicalDimension : " << base.physicalDimension << "\n"
-      << "nZones : " << base.zones.size() << std::endl;
+template<>
+std::ostream&
+operator<<(std::ostream& out, const dataArray<float>& data)
+{
+  out << "DataArray :\n"
+      << "  Name : " << data.name << "\n"
+      << "  DataType : float\n"
+      << "  Size : " << data.data.size() << std::endl;
+
   return out;
 }
 
-root parse(const std::string &path) {
-  fileIn f{path};
+template<>
+std::ostream&
+operator<<(std::ostream& out, const dataArray<double>& data)
+{
+  out << "DataArray :\n"
+      << "  Name : " << data.name << "\n"
+      << "  DataType : double\n"
+      << "  Size : " << data.data.size() << std::endl;
+
+  return out;
+}
+
+std::ostream&
+operator<<(std::ostream& out, const gridCoordinatesT& gridCoords)
+{
+  out << "GridCoordinates\n"
+      << "  Name : " << gridCoords.name << "\n"
+      << "  nDataArray : " << gridCoords.dataArrays.size() << std::endl;
+
+  return out;
+}
+
+std::ostream&
+operator<<(std::ostream& out, const zoneStructured& zone)
+{
+  out << "Zone :\n"
+      << "  ZoneType : Structured\n"
+      << "  Name : " << zone.name << "\n"
+      << "  VertexSize : [";
+  for (const auto i : zone.nVertex) {
+    out << " " << i;
+  }
+  out << "]\n"
+      << "  CellSize : [";
+  for (const auto i : zone.nCell) {
+    out << " " << i;
+  }
+  out << "]\n"
+      << "  VertexSizeBoundary : [";
+  for (const auto i : zone.nBoundVertex) {
+    out << " " << i;
+  }
+  out << "]\n"
+      << "  nGridCoordinates : " << zone.gridCoordinates.size() << std::endl;
+
+  return out;
+}
+
+std::ostream&
+operator<<(std::ostream& out, const zoneUnstructured& zone)
+{
+  out << "Zone :\n"
+      << "  ZoneType : Unstructured\n"
+      << "  Name : " << zone.name << "\n"
+      << "  VertexSize : " << zone.nVertex << "\n"
+      << "  CellSize : " << zone.nCell << "\n"
+      << "  VertexSizeBoundary : " << zone.nBoundVertex << "\n"
+      << "  nGridCoordinates : " << zone.gridCoordinates.size() << std::endl;
+  return out;
+}
+
+std::ostream&
+operator<<(std::ostream& out, const base& base)
+{
+  out << "Base :\n"
+      << "  basename : " << base.name << "\n"
+      << "  cellDimension : " << base.cellDimension << "\n"
+      << "  physicalDimension : " << base.physicalDimension << "\n"
+      << "  nZone : " << base.zones.size() << std::endl;
+  return out;
+}
+
+root
+parse(const std::string& path)
+{
+  fileIn f{ path };
 
   /// @todo parse Simulation Type (SimulationType_t)
   /// @todo parse Grid Location (GridLocation_t)
   /// @todo parse Point Sets (IndexArray_t, IndexRange_t)
   /// @todo parse Rind Layers (Rind_t)
 
-  return {f.readBaseInformation()};
+  return { f.readBaseInformation() };
 }
 
-void writeFile(const std::string &path, root r) {
-  fileOut f{path};
+void
+writeFile(const std::string& path, root r)
+{
+  fileOut f{ path };
   f.writeBaseInformation(r);
 }
 
