@@ -1,2 +1,2 @@
-add_executable(cgns_struct2unstruct_cli src/main.cpp)
-target_link_libraries(cgns_struct2unstruct_cli cgns_struct2unstruct)
+add_executable(cgns-tools-cli src/main.cpp)
+target_link_libraries(cgns-tools-cli cgns-tools)

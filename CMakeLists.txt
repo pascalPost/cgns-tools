@@ -8,14 +8,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 
-add_library(cgns_struct2unstruct SHARED src/cgns.cpp)
+add_library(cgns-tools SHARED src/cgns.cpp)
 
 
 find_package(CGNS REQUIRED)
-target_link_libraries(cgns_struct2unstruct CGNS::CGNS)
+target_link_libraries(cgns-tools CGNS::CGNS)
 
 
 include(ExternalProject)
@@ -32,8 +32,8 @@ ExternalProject_Add(
 ExternalProject_Get_property(spdlog SOURCE_DIR)
 set(SPDLOG_INCLUDES "${SOURCE_DIR}/include")
 
-add_dependencies(cgns_struct2unstruct spdlog)
-target_include_directories(cgns_struct2unstruct PUBLIC ${SPDLOG_INCLUDES})
+add_dependencies(cgns-tools spdlog)
+target_include_directories(cgns-tools PUBLIC ${SPDLOG_INCLUDES})
 
 
 add_subdirectory(cli)
