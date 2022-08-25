@@ -1,7 +1,7 @@
 // Copyright (c) 2022 Pascal Post
 // This code is licensed under MIT license (see LICENSE.txt for details)
 
-#include "../../include/cgns-tools.hpp"
+#include <cgns-tools.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
