@@ -35,6 +35,7 @@ set(SPDLOG_INCLUDES "${SOURCE_DIR}/include")
 add_dependencies(cgns-tools spdlog)
 target_include_directories(cgns-tools PUBLIC ${SPDLOG_INCLUDES})
 
+target_include_directories(cgns-tools PUBLIC include)
 
 add_subdirectory(cli)
 add_subdirectory(pythonInterface)
