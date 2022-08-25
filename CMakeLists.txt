@@ -11,7 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 
-add_library(cgns-tools SHARED src/cgns.cpp)
+add_library(cgns-tools SHARED src/cgns-tools.cpp)
 
 
 find_package(CGNS REQUIRED)

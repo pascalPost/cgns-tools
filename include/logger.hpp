@@ -9,9 +9,13 @@
 
 #include <string_view>
 
+namespace cgns_tools {
+
 template <typename... Args>
 std::string indent(const unsigned indent, std::string_view format_str,
                    Args &&...args) {
   return fmt::format("{:{}}", "", indent)
       .append(fmt::format(format_str, std::forward<Args>(args)...));
 }
+
+} // namespace cgns_tools

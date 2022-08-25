@@ -16,94 +16,67 @@
 #include <variant>
 #include <vector>
 
-namespace cgns
-{
+namespace cgns_tools {
 
 /// string conversion of given BCType_t
-std::string_view
-to_string(const BCType_t bc);
+std::string_view to_string(const BCType_t bc);
 
 /// cgns function call with error handling
-template<auto& F, class... Args>
-void
-cgnsFn(Args&&... args)
-{
-  if (const int ier = F(args...); ier != CG_OK)
-  {
+template <auto &F, class... Args> void cgnsFn(Args &&...args) {
+  if (const int ier = F(args...); ier != CG_OK) {
     cg_error_exit();
   }
 }
 
 /// represents FamilyBC_t
-struct familyBC
-{
+struct familyBC {
   std::string name;
   BCType_t bcType;
 };
 
 /// represents Family_t
-struct family
-{
-  family(std::string&& name, std::optional<familyBC>&& bc)
-    : name{ std::move(name) }
-    , bc{ std::move(bc) }
-  {
-  }
+struct family {
+  family(std::string &&name, std::optional<familyBC> &&bc)
+      : name{std::move(name)}, bc{std::move(bc)} {}
 
   std::string name;
   std::optional<familyBC> bc;
 };
 
 /// represents DataArray_t
-template<typename T>
-struct dataArray
-{
+template <typename T> struct dataArray {
   /// constructor
-  dataArray(std::string&& name, std::vector<T>&& data)
-    : name{ name }
-    , data{ std::move(data) }
-  {
-  }
+  dataArray(std::string &&name, std::vector<T> &&data)
+      : name{name}, data{std::move(data)} {}
 
   /// name : Data-name identifier or user defined
   std::string name;
 
   std::vector<T> data;
 
-  DataType_t dataType() const
-  {
-    if constexpr (std::is_same_v<T, float>)
-    {
+  DataType_t dataType() const {
+    if constexpr (std::is_same_v<T, float>) {
       return RealSingle;
-    }
-    else if constexpr (std::is_same_v<T, double>)
-    {
+    } else if constexpr (std::is_same_v<T, double>) {
       return RealDouble;
-    }
-    else
-    {
+    } else {
       static_assert(always_false<T>::value, "Unknow dataArray data type");
     }
   }
 };
 
 /// streaming helper function for dataArray
-template<typename T>
-std::ostream&
-operator<<(std::ostream&, const dataArray<T>&);
+template <typename T>
+std::ostream &operator<<(std::ostream &, const dataArray<T> &);
 
 using gridCoordinateDataV = std::variant<dataArray<float>, dataArray<double>>;
 
 /// represents GridCoordinates_t
-struct gridCoordinatesT
-{
+struct gridCoordinatesT {
   /// constructor
-  gridCoordinatesT(std::string&& name,
-                   std::vector<gridCoordinateDataV>&& dataArrays)
-    : name{ std::move(name) }
-    , dataArrays{ std::move(dataArrays) }
-  {
-  }
+  gridCoordinatesT(std::string &&name,
+                   std::vector<gridCoordinateDataV> &&dataArrays)
+      : name{std::move(name)}, dataArrays{std::move(dataArrays)} {}
 
   /// name : GridCoordinates or user defined
   std::string name;
@@ -112,12 +85,10 @@ struct gridCoordinatesT
 };
 
 /// streaming helper function for gridCoordinatesT
-std::ostream&
-operator<<(std::ostream&, const gridCoordinatesT&);
+std::ostream &operator<<(std::ostream &, const gridCoordinatesT &);
 
 /// representing Zone_t
-struct zone
-{
+struct zone {
   virtual ~zone() = default;
 
   /// User defined name
@@ -130,29 +101,21 @@ struct zone
 
 protected:
   /// constructor
-  zone(std::string&& name, std::vector<gridCoordinatesT>&& gridCoordinates)
-    : name(std::move(name))
-    , gridCoordinates{ std::move(gridCoordinates) }
-  {
-  }
+  zone(std::string &&name, std::vector<gridCoordinatesT> &&gridCoordinates)
+      : name(std::move(name)), gridCoordinates{std::move(gridCoordinates)} {}
 };
 
 /// structured Zone_t
-struct zoneStructured : zone
-{
+struct zoneStructured : zone {
 
   /// constructor
-  zoneStructured(std::string&& name,
-                 std::vector<unsigned>&& nVertex,
-                 std::vector<unsigned>&& nCell,
-                 std::vector<unsigned>&& nBoundVertex,
-                 std::vector<gridCoordinatesT>&& gridCoordinates)
-    : zone{ std::move(name), std::move(gridCoordinates) }
-    , nVertex{ std::move(nVertex) }
-    , nCell{ std::move(nCell) }
-    , nBoundVertex{ std::move(nBoundVertex) }
-  {
-  }
+  zoneStructured(std::string &&name, std::vector<unsigned> &&nVertex,
+                 std::vector<unsigned> &&nCell,
+                 std::vector<unsigned> &&nBoundVertex,
+                 std::vector<gridCoordinatesT> &&gridCoordinates)
+      : zone{std::move(name), std::move(gridCoordinates)}, nVertex{std::move(
+                                                               nVertex)},
+        nCell{std::move(nCell)}, nBoundVertex{std::move(nBoundVertex)} {}
 
   /// number of vertices in I, J, K (3d) or I, J (2d) direction
   std::vector<unsigned> nVertex;
@@ -166,8 +129,7 @@ struct zoneStructured : zone
   static constexpr ZoneType_t zonetype() noexcept { return Structured; }
 
   /// @brief index dimension for structured zones is the base cell dimension
-  unsigned indexDimension() const
-  {
+  unsigned indexDimension() const {
     assert(nVertex.size() == nCell.size() &&
            nVertex.size() == nBoundVertex.size());
     return nVertex.size();
@@ -175,25 +137,17 @@ struct zoneStructured : zone
 };
 
 /// streaming helper function for zoneStructured
-std::ostream&
-operator<<(std::ostream&, const zoneStructured&);
+std::ostream &operator<<(std::ostream &, const zoneStructured &);
 
 /// unstructured Zone_t
-struct zoneUnstructured : zone
-{
+struct zoneUnstructured : zone {
 
   /// constructor
-  zoneUnstructured(std::string&& name,
-                   const unsigned nVertex,
-                   const unsigned nCell,
-                   const unsigned nBoundVertex,
-                   std::vector<gridCoordinatesT>&& gridCoordinates)
-    : zone{ std::move(name), std::move(gridCoordinates) }
-    , nVertex{ nVertex }
-    , nCell{ nCell }
-    , nBoundVertex{ nBoundVertex }
-  {
-  }
+  zoneUnstructured(std::string &&name, const unsigned nVertex,
+                   const unsigned nCell, const unsigned nBoundVertex,
+                   std::vector<gridCoordinatesT> &&gridCoordinates)
+      : zone{std::move(name), std::move(gridCoordinates)}, nVertex{nVertex},
+        nCell{nCell}, nBoundVertex{nBoundVertex} {}
 
   unsigned nVertex;
   unsigned nCell;
@@ -206,28 +160,20 @@ struct zoneUnstructured : zone
 };
 
 /// streaming helper function for zoneUnstructured
-std::ostream&
-operator<<(std::ostream&, const zoneUnstructured&);
+std::ostream &operator<<(std::ostream &, const zoneUnstructured &);
 
 using zoneV = std::variant<zoneStructured, zoneUnstructured>;
 
 // representing CGNSBase_t
-struct base
-{
+struct base {
 
   /// constructor
-  base(std::string&& name,
-       const unsigned cellDimension,
-       const unsigned physicalDimension,
-       std::vector<zoneV>&& zones = {},
-       std::vector<family>&& families = {})
-    : name{ std::move(name) }
-    , cellDimension{ cellDimension }
-    , physicalDimension{ physicalDimension }
-    , zones{ std::move(zones) }
-    , families{ std::move(families) }
-  {
-  }
+  base(std::string &&name, const unsigned cellDimension,
+       const unsigned physicalDimension, std::vector<zoneV> &&zones = {},
+       std::vector<family> &&families = {})
+      : name{std::move(name)}, cellDimension{cellDimension},
+        physicalDimension{physicalDimension}, zones{std::move(zones)},
+        families{std::move(families)} {}
 
   /// User defined name
   std::string name;
@@ -248,44 +194,39 @@ struct base
 };
 
 /// streaming helper function for base
-std::ostream&
-operator<<(std::ostream&, const base&);
+std::ostream &operator<<(std::ostream &, const base &);
 
 /// root of a cgns mesh
-struct root
-{
+struct root {
   std::vector<base> bases;
 };
 
 /// enum mapping for file modes
-enum class fileMode
-{
+enum class fileMode {
   read = CG_MODE_READ,
   write = CG_MODE_WRITE,
   modify = CG_MODE_MODIFY
 };
 
 /// cgns file (pure virtual base class)
-struct file
-{
+struct file {
 
   /// destructor closing the file
   virtual ~file();
 
 protected:
   /// constructor
-  file(const std::string& path, fileMode);
+  file(const std::string &path, fileMode);
 
   /// cgns file handle
   int _handle;
 };
 
 /// cgns read file
-struct fileIn : file
-{
+struct fileIn : file {
 
   /// construct a new file based on the path
-  fileIn(const std::string& path);
+  fileIn(const std::string &path);
 
   /// read base information
   std::vector<base> readBaseInformation() const;
@@ -297,10 +238,9 @@ struct fileIn : file
   /// nVertex.size() = 1 : Unstructured
   /// nVertex.size() = 2 : 2D Structured
   /// nVertex.size() = 3 : 3D Structured
-  std::vector<gridCoordinatesT> readZoneGridCoordinates(
-    const int B,
-    const int Z,
-    const std::vector<unsigned>& nVertex) const;
+  std::vector<gridCoordinatesT>
+  readZoneGridCoordinates(const int B, const int Z,
+                          const std::vector<unsigned> &nVertex) const;
 
   /// read Family Definition
   std::vector<family> readFamilyDefinition(const int B) const;
@@ -310,40 +250,35 @@ struct fileIn : file
 };
 
 /// cgns read file
-struct fileOut : file
-{
+struct fileOut : file {
 
   /// construct a new file based on the path
-  fileOut(const std::string& path);
+  fileOut(const std::string &path);
 
   /// write base information of root to file
   void writeBaseInformation(root) const;
 
   /// write base information
-  void writeZoneInformation(const int B, const zoneV&) const;
+  void writeZoneInformation(const int B, const zoneV &) const;
 
   /// write zone grid coordinates
-  void writeZoneGridCoordinates(const int B,
-                                const int Z,
-                                const gridCoordinatesT&) const;
+  void writeZoneGridCoordinates(const int B, const int Z,
+                                const gridCoordinatesT &) const;
 
   void writeDataArray() const;
 
   /// write zone grid coordinate data
-  void writeZoneGridCoordinateData(const int B,
-                                   const int Z,
-                                   const gridCoordinateDataV& data) const;
+  void writeZoneGridCoordinateData(const int B, const int Z,
+                                   const gridCoordinateDataV &data) const;
 
   /// write family definition including the optional BC
-  void writeFamilyDefinition(const int B, const family& family) const;
+  void writeFamilyDefinition(const int B, const family &family) const;
 };
 
 /// parse file and return a root to the cgns hirarchy
-root
-parse(const std::string& path);
+root parse(const std::string &path);
 
 /// write cgns hirachy to the give file path
-void
-writeFile(const std::string& path, root);
+void writeFile(const std::string &path, root);
 
-} // namespace cgns
+} // namespace cgns_tools
